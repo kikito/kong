@@ -86,6 +86,7 @@ build = {
     ["kong.api.routes.cache"] = "kong/api/routes/cache.lua",
     ["kong.api.routes.upstreams"] = "kong/api/routes/upstreams.lua",
     ["kong.api.routes.certificates"] = "kong/api/routes/certificates.lua",
+    ["kong.api.routes.server_names"] = "kong/api/routes/server_names.lua",
 
     ["kong.tools.ip"] = "kong/tools/ip.lua",
     ["kong.tools.ciphers"] = "kong/tools/ciphers.lua",

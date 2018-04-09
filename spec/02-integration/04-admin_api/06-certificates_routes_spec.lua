@@ -12,6 +12,27 @@ local function it_content_types(title, fn)
 end
 
 
+local function get_server_names_lists(certs)
+  local lists = {}
+  for i=1, #certs do
+    lists[i] = certs[i].server_names
+  end
+
+  table.sort(lists, function(a,b)
+    if not a[1] then
+      return true
+    end
+    if not b[1] then
+      return false
+    end
+
+    return a[1] < b[1]
+  end)
+
+  return lists
+end
+
+
 for _, strategy in helpers.each_strategy() do
 
 describe("Admin API: #" .. strategy, function()
@@ -82,17 +103,12 @@ describe("Admin API: #" .. strategy, function()
         local json = cjson.decode(body)
         assert.equals("duplicate server name in request: foobar.com", json.message)
 
-        -- make sure we dont add any server_names
-        res  = client:get("/server_names")
-        body = assert.res_status(200, res)
-        json = cjson.decode(body)
-        assert.equal(2, #json.data)
-
-        -- make sure we didnt add the certificate
+        -- make sure we didnt add the certificate, or any server names
         res  = client:get("/certificates")
         body = assert.res_status(200, res)
         json = cjson.decode(body)
         assert.equal(1, #json.data)
+        assert.same({ "bar.com", "foo.com" }, json.data[1].server_names)
       end)
 
       it("returns a conflict when a pre-existing sni is detected", function()
@@ -108,16 +124,7 @@ describe("Admin API: #" .. strategy, function()
         local json = cjson.decode(body)
         assert.equals("Server name already exists: foo.com", json.message)
 
-        -- make sure we only have two server_names
-        res  = client:get("/server_names")
-        body = assert.res_status(200, res)
-        json = cjson.decode(body)
-        assert.equal(2, #json.data)
-        local names = { json.data[1].name, json.data[2].name }
-        table.sort(names)
-        assert.same({ "bar.com", "foo.com" }, names)
-
-        -- make sure we only have one certificate
+        -- make sure we only have one certificate, with two server names
         res  = client:get("/certificates")
         body = assert.res_status(200, res)
         json = cjson.decode(body)
@@ -165,6 +172,8 @@ describe("Admin API: #" .. strategy, function()
   end)
 
   describe("/certificates/cert_id_or_server_name", function()
+    local certificate
+
     before_each(function()
       assert(db:truncate())
       local res = client:post("/certificates", {
@@ -176,10 +185,21 @@ describe("Admin API: #" .. strategy, function()
         headers = { ["Content-Type"] = "application/x-www-form-urlencoded" },
       })
 
-      assert.res_status(201, res)
+      local body = assert.res_status(201, res)
+      certificate = cjson.decode(body)
     end)
 
     describe("GET", function()
+      it("retrieves a certificate by id", function()
+        local res1  = client:get("/certificates/" .. certificate.id)
+        local body1 = assert.res_status(200, res1)
+        local json1 = cjson.decode(body1)
+
+        assert.is_string(json1.cert)
+        assert.is_string(json1.key)
+        assert.same({ "bar.com", "foo.com" }, json1.server_names)
+      end)
+
       it("retrieves a certificate by Server Name", function()
         local res1  = client:get("/certificates/foo.com")
         local body1 = assert.res_status(200, res1)
@@ -236,6 +256,23 @@ describe("Admin API: #" .. strategy, function()
         cert_bar = cjson.decode(body)
       end)
 
+      it_content_types("updates a certificate by cert id", function(content_type)
+        return function()
+          local res = client:patch("/certificates/" .. cert_foo.id, {
+            body = {
+              cert = "foo_cert",
+              key = "foo_key",
+            },
+            headers = { ["Content-Type"] = content_type }
+          })
+
+          local body = assert.res_status(200, res)
+          local json = cjson.decode(body)
+
+          assert.equal("foo_cert", json.cert)
+        end
+      end)
+
       it_content_types("updates a certificate by Server Name", function(content_type)
         return function()
           local res = client:patch("/certificates/foo.com", {
@@ -265,17 +302,12 @@ describe("Admin API: #" .. strategy, function()
 
         assert.res_status(404, res)
 
-        -- make sure we did not add any sni
-        res = client:get("/server_names")
+        -- make sure we did not add any certificate or server name
+        res  = client:get("/certificates")
         local body = assert.res_status(200, res)
         local json = cjson.decode(body)
         assert.equal(2, #json.data)
-
-        -- make sure we did not add any certificate
-        res  = client:get("/certificates")
-        body = assert.res_status(200, res)
-        json = cjson.decode(body)
-        assert.equal(2, #json.data)
+        assert.same({ { "bar.com" }, { "foo.com" } }, get_server_names_lists(json.data))
       end)
 
       it("updates server_names associated with a certificate", function()
@@ -286,24 +318,15 @@ describe("Admin API: #" .. strategy, function()
 
         local body = assert.res_status(200, res)
         local json = cjson.decode(body)
-
         assert.same({ "baz.com" }, json.server_names)
 
-        -- make sure number of server_names don't change
-        -- since we delete foo.com and added baz.com
-        res = client:get("/server_names")
-        body = assert.res_status(200, res)
-        json = cjson.decode(body)
-        assert.equal(2, #json.data)
-        local names = { json.data[1].name, json.data[2].name }
-        table.sort(names)
-        assert.are.same( { "bar.com", "baz.com" } , names)
-
-        -- make sure we did not add any certificate
+        -- make sure we did not add any certificate, and that the server names
+        -- are correct
         res  = client:get("/certificates")
         body = assert.res_status(200, res)
         json = cjson.decode(body)
         assert.equal(2, #json.data)
+        assert.same({ { "bar.com" }, { "baz.com" } }, get_server_names_lists(json.data))
       end)
 
       it("updates only the certificate if no server_names are specified", function()
@@ -330,20 +353,14 @@ describe("Admin API: #" .. strategy, function()
         assert.equal("bar_cert", json.cert)
         assert.equal("bar_key", json.key)
 
-        -- make sure number of server_names don't change
-        res  = client:get("/server_names")
-        body = assert.res_status(200, res)
-        json = cjson.decode(body)
-        assert.equal(2, #json.data)
-
-        -- make sure we did not add any certificate
+        -- make sure we did not add any certificate or server name
         res  = client:get("/certificates")
         body = assert.res_status(200, res)
         json = cjson.decode(body)
-        assert.equal(2, #json.data)
+        assert.same({ { "bar.com" }, { "foo.com" } }, get_server_names_lists(json.data))
       end)
 
-      it("returns a conflict when duplicates server_names are present in the request", function()
+      it("returns a conflict when duplicated server_names are present in the request", function()
         local res = client:patch("/certificates/" .. cert_bar.id, {
           body    = {
             server_names  = "baz.com,baz.com",
@@ -355,17 +372,12 @@ describe("Admin API: #" .. strategy, function()
 
         assert.equals("duplicate server name in request: baz.com", json.message)
 
-        -- make sure number of server_names don't change
-        res  = client:get("/server_names")
-        body = assert.res_status(200, res)
-        json = cjson.decode(body)
-        assert.equal(2, #json.data)
-
-        -- make sure we did not add any certificate
+        -- make sure we did not change certificates or server names
         res = client:get("/certificates")
         body = assert.res_status(200, res)
         json = cjson.decode(body)
         assert.equal(2, #json.data)
+        assert.same({ { "bar.com" }, { "foo.com" } }, get_server_names_lists(json.data))
       end)
 
       it("returns a conflict when a pre-existing server name present in " ..
@@ -384,17 +396,12 @@ describe("Admin API: #" .. strategy, function()
                       "existing certificate (" .. cert_foo.id .. ")",
                       json.message)
 
-        -- make sure number of server_names don't change
-        res  = client:get("/server_names")
-        body = assert.res_status(200, res)
-        json = cjson.decode(body)
-        assert.equal(2, #json.data)
-
-        -- make sure we did not add any certificate
+        -- make sure we did not add any certificate or server name
         res  = client:get("/certificates")
         body = assert.res_status(200, res)
         json = cjson.decode(body)
         assert.equal(2, #json.data)
+        assert.same({ { "bar.com" }, { "foo.com" } }, get_server_names_lists(json.data))
       end)
 
       it("deletes all server_names from a certificate if server_names field is JSON null", function()
@@ -414,34 +421,24 @@ describe("Admin API: #" .. strategy, function()
         assert.equal(0, #json.server_names)
         assert.matches('"server_names":[]', body, nil, true)
 
-        -- make sure the sni was deleted
-        res  = client:get("/server_names")
-        body = assert.res_status(200, res)
-        json = cjson.decode(body)
-        assert.equal(1, #json.data)
-        assert.equal("foo.com", json.data[1].name)
-
-        -- make sure we did not add any certificate
+        -- make sure we did not add any certificate and the server name was deleted
         res  = client:get("/certificates")
         body = assert.res_status(200, res)
         json = cjson.decode(body)
         assert.equal(2, #json.data)
+        assert.same({ {}, { "foo.com" } }, get_server_names_lists(json.data))
       end)
     end)
 
     describe("DELETE", function()
       it("deletes a certificate and all related server_names", function()
         local res = client:delete("/certificates/foo.com")
-
         assert.res_status(204, res)
 
-        res = client:get("/server_names/foo.com")
-
-        assert.res_status(404, res)
-
-        res = client:get("/server_names/bar.com")
-
-        assert.res_status(404, res)
+        res = client:get("/certificates")
+        local body = assert.res_status(200, res)
+        local json = cjson.decode(body)
+        assert.equal(0, #json.data)
       end)
 
       it("deletes a certificate by id", function()
@@ -456,14 +453,18 @@ describe("Admin API: #" .. strategy, function()
         local json = cjson.decode(body)
 
         local res = client:delete("/certificates/" .. json.id)
-
         assert.res_status(204, res)
+
+        res = client:get("/certificates")
+        local body = assert.res_status(200, res)
+        local json = cjson.decode(body)
+        assert.equal(1, #json.data)
       end)
     end)
   end)
 
 
-  describe("/server_names", function()
+  describe("/certificates/:certificate/server_names", function()
     describe("POST", function()
 
       local certificate
@@ -471,32 +472,48 @@ describe("Admin API: #" .. strategy, function()
         assert(db:truncate())
 
         certificate = bp.certificates:insert()
+        bp.server_names:insert({
+          name = "ttt.com",
+          certificate = { id = certificate.id }
+        })
       end)
 
       describe("errors", function()
         it("certificate doesn't exist", function()
-          local res = client:post("/server_names", {
-            body   = {
-              name        = "bar.com",
-              certificate = { id = "585e4c16-c656-11e6-8db9-5f512d8a12cd" },
+          local res = client:post("/certificates/585e4c16-c656-11e6-8db9-5f512d8a12cd/server_names", {
+            body = {
+              name = "bar.com",
             },
             headers = { ["Content-Type"] = "application/json" },
           })
 
-          local body = assert.res_status(400, res)
+          local body = assert.res_status(404, res)
           local json = cjson.decode(body)
-          assert.same("the foreign key '{id=\"585e4c16-c656-11e6-8db9-5f512d8a12cd\"}' " ..
-                      "does not reference an existing 'certificates' entity.",
-                      json.message)
+          assert.same("Not found", json.message)
         end)
       end)
 
-      it_content_types("creates a Server Name", function(content_type)
+      it_content_types("creates a Server Name using a certificate id", function(content_type)
         return function()
-          local res = client:post("/server_names", {
-            body    = {
-              name        = "foo.com",
-              certificate = { id = certificate.id },
+          local res = client:post("/certificates/" .. certificate.id .. "/server_names", {
+            body = {
+              name = "foo.com",
+            },
+            headers = { ["Content-Type"] = content_type },
+          })
+
+          local body = assert.res_status(201, res)
+          local json = cjson.decode(body)
+          assert.equal("foo.com", json.name)
+          assert.equal(certificate.id, json.certificate.id)
+        end
+      end)
+
+      it_content_types("creates a Server Name using a server name to id the certificate", function(content_type)
+        return function()
+          local res = client:post("/certificates/ttt.com/server_names", {
+            body = {
+              name = "foo.com",
             },
             headers = { ["Content-Type"] = content_type },
           })
@@ -514,10 +531,9 @@ describe("Admin API: #" .. strategy, function()
           certificate = certificate,
         }
 
-        local res = client:post("/server_names", {
+        local res = client:post("/certificates/" .. certificate.id .. "/server_names", {
           body    = {
-            name        = "foo.com",
-            certificate = { id = certificate.id },
+            name = "foo.com",
           },
           headers = { ["Content-Type"] = "application/json" },
         })
@@ -537,7 +553,7 @@ describe("Admin API: #" .. strategy, function()
           certificate = certificate,
         }
 
-        local res  = client:get("/server_names")
+        local res  = client:get("/certificates/" .. certificate.id .. "/server_names")
         local body = assert.res_status(200, res)
         local json = cjson.decode(body)
         assert.equal(1, #json.data)
@@ -548,20 +564,27 @@ describe("Admin API: #" .. strategy, function()
   end)
 
   describe("/server_names/:name", function()
-    local certificate
+    local certificate, server_name
 
     before_each(function()
       assert(db:truncate())
       certificate = bp.certificates:insert()
-      bp.server_names:insert {
+      server_name = bp.server_names:insert {
         name        = "foo.com",
         certificate = certificate,
       }
     end)
 
     describe("GET", function()
-      it("retrieves a Server Name", function()
+      it("retrieves a Server Name using the name", function()
         local res  = client:get("/server_names/foo.com")
+        local body = assert.res_status(200, res)
+        local json = cjson.decode(body)
+        assert.equal("foo.com", json.name)
+        assert.equal(certificate.id, json.certificate.id)
+      end)
+      it("retrieves a Server Name using the id", function()
+        local res  = client:get("/server_names/" .. server_name.id)
         local body = assert.res_status(200, res)
         local json = cjson.decode(body)
         assert.equal("foo.com", json.name)
@@ -570,36 +593,33 @@ describe("Admin API: #" .. strategy, function()
     end)
 
     describe("PATCH", function()
-      do
-        local test = it
-        if strategy == "cassandra" then
-          test = pending
-        end
+      it("updates a Server Name", function()
+        local certificate_2 = bp.certificates:insert {
+          cert = "foo",
+          key = "bar",
+        }
 
-        test("updates a Server Name", function()
-          -- SKIP: this test fails with Cassandra because the PRIMARY KEY
-          -- used by the C* table is a composite of (name,
-          -- certificate_id), and hence, we cannot update the
-          -- certificate_id field because it is in the `SET` part of the
-          -- query built by the db, but in C*, one cannot change a value
-          -- from the clustering key.
-          local certificate_2 = bp.certificates:insert {
-            cert = "foo",
-            key = "bar",
-          }
+        local res = client:patch("/server_names/foo.com", {
+          body = {
+            certificate = { id = certificate_2.id },
+          },
+          headers = { ["Content-Type"] = "application/json" },
+        })
 
-          local res = client:patch("/server_names/foo.com", {
-            body    = {
-              certificate = { id = certificate_2.id },
-            },
-            headers = { ["Content-Type"] = "application/json" },
-          })
+        local body = assert.res_status(200, res)
+        local json = cjson.decode(body)
+        assert.equal(certificate_2.id, json.certificate.id)
 
-          local body = assert.res_status(200, res)
-          local json = cjson.decode(body)
-          assert.equal(certificate_2.id, json.certificate.id)
-        end)
-      end
+        local res = client:get("/certificates/" .. certificate.id)
+        local body = assert.res_status(200, res)
+        local json = cjson.decode(body)
+        assert.same({}, json.server_names)
+
+        local res = client:get("/certificates/" .. certificate_2.id)
+        local body = assert.res_status(200, res)
+        local json = cjson.decode(body)
+        assert.same({ "foo.com" }, json.server_names)
+      end)
     end)
 
     describe("DELETE", function()
