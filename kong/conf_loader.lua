@@ -1,7 +1,6 @@
 local kong_default_conf = require "kong.templates.kong_defaults"
 local pl_stringio = require "pl.stringio"
 local pl_stringx = require "pl.stringx"
-local constants = require "kong.constants"
 local pl_pretty = require "pl.pretty"
 local pl_config = require "pl.config"
 local pl_file = require "pl.file"
@@ -108,6 +107,7 @@ local CONF_INFERENCES = {
   admin_error_log = {typ = "string"},
   log_level = {enum = {"debug", "info", "notice", "warn",
                        "error", "crit", "alert", "emerg"}},
+  default_plugins = {typ = "array"},
   custom_plugins = {typ = "array"},
   anonymous_reports = {typ = "boolean"},
   nginx_daemon = {typ = "ngx_boolean"},
@@ -532,13 +532,18 @@ local function load(path, custom_conf)
 
   -- merge plugins
   do
-    local custom_plugins = {}
+    local plugin_list = {}
+    for i = 1, #conf.default_plugins do
+      local plugin_name = pl_stringx.strip(conf.default_plugins[i])
+      plugin_list[plugin_name] = true
+      log.verbose("plugins from conf file: %s", plugin_name)
+    end
     for i = 1, #conf.custom_plugins do
       local plugin_name = pl_stringx.strip(conf.custom_plugins[i])
-      custom_plugins[plugin_name] = true
+      plugin_list[plugin_name] = true
+      log.verbose("custom plugins from conf file: %s", plugin_name)
     end
-    conf.plugins = tablex.merge(constants.PLUGINS_AVAILABLE, custom_plugins, true)
-    setmetatable(conf.plugins, nil) -- remove Map mt
+    conf.plugins = plugin_list
   end
 
   -- nginx user directive

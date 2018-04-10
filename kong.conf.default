@@ -59,6 +59,12 @@
                                           # adjusted by the `log_level`
                                           # directive.
 
+#default_plugins = acl, aws-lambda, basic-auth, bot-detection, correlation-id, cors, datadog, file-log, hmac-auth, http-log, ip-restriction, jwt, key-auth, ldap-auth, loggly, oauth2, rate-limiting, request-size-limiting, request-termination, response-ratelimiting, request-transformer, response-transformer, runscope, statsd, syslog, tcp-log, udp-log
+                                 # Comma-separated list of plugins bundled
+                                 # with Kong that should be loaded
+                                 # Use this property to disable plugins
+                                 # that are bundled with Kong.
+
 #custom_plugins =                # Comma-separated list of additional plugins
                                  # this node should load.
                                  # Use this property to load custom plugins

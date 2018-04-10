@@ -5,6 +5,7 @@ proxy_access_log = logs/access.log
 proxy_error_log = logs/error.log
 admin_access_log = logs/admin_access.log
 admin_error_log = logs/error.log
+default_plugins = acl, aws-lambda, basic-auth, bot-detection, correlation-id, cors, datadog, file-log, hmac-auth, http-log, ip-restriction, jwt, key-auth, ldap-auth, loggly, oauth2, rate-limiting, request-size-limiting, request-termination, response-ratelimiting, request-transformer, response-transformer, runscope, statsd, syslog, tcp-log, udp-log
 custom_plugins = NONE
 anonymous_reports = on
 

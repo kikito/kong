@@ -1,38 +1,3 @@
-local plugins = {
-  "jwt",
-  "acl",
-  "correlation-id",
-  "cors",
-  "oauth2",
-  "tcp-log",
-  "udp-log",
-  "file-log",
-  "http-log",
-  "key-auth",
-  "hmac-auth",
-  "basic-auth",
-  "ip-restriction",
-  "request-transformer",
-  "response-transformer",
-  "request-size-limiting",
-  "rate-limiting",
-  "response-ratelimiting",
-  "syslog",
-  "loggly",
-  "datadog",
-  "runscope",
-  "ldap-auth",
-  "statsd",
-  "bot-detection",
-  "aws-lambda",
-  "request-termination",
-}
-
-local plugin_map = {}
-for i = 1, #plugins do
-  plugin_map[plugins[i]] = true
-end
-
 local deprecated_plugins = {
   "galileo",
 }
@@ -43,7 +8,6 @@ for _, plugin in ipairs(deprecated_plugins) do
 end
 
 return {
-  PLUGINS_AVAILABLE = plugin_map,
   DEPRECATED_PLUGINS = deprecated_plugin_map,
   -- non-standard headers, specific to Kong
   HEADERS = {

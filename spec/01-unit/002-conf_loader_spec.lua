@@ -1,5 +1,6 @@
 local conf_loader = require "kong.conf_loader"
 local helpers = require "spec.helpers"
+local tablex = require "pl.tablex"
 
 describe("Configuration loader", function()
   it("loads the defaults", function()
@@ -50,10 +51,18 @@ describe("Configuration loader", function()
     }))
     assert.is_nil(conf.stub_property)
   end)
-  it("returns a plugins table", function()
-    local constants = require "kong.constants"
+  it("returns a non-nil plugin table", function()
     local conf = assert(conf_loader())
-    assert.same(constants.PLUGINS_AVAILABLE, conf.plugins)
+    assert.is_not_nil(conf.plugins)
+  end)
+  it("loads default plugins", function()
+    local conf = assert(conf_loader(nil, {
+      default_plugins = "foo, bar"
+    }))
+    assert.is_not_nil(conf.plugins)
+    assert.same(2, tablex.size(conf.plugins))
+    assert.True(conf.plugins["foo"])
+    assert.True(conf.plugins["bar"])
   end)
   it("loads custom plugins", function()
     local conf = assert(conf_loader(nil, {
@@ -61,6 +70,18 @@ describe("Configuration loader", function()
     }))
     assert.True(conf.plugins["hello-world"])
     assert.True(conf.plugins["my-plugin"])
+  end)
+  it("merges default plugins and custom plugins", function()
+    local conf = assert(conf_loader(nil, {
+      default_plugins = "foo, bar",
+      custom_plugins = "baz,foobaz",
+    }))
+    assert.is_not_nil(conf.plugins)
+    assert.same(4, tablex.size(conf.plugins))
+    assert.True(conf.plugins["foo"])
+    assert.True(conf.plugins["bar"])
+    assert.True(conf.plugins["baz"])
+    assert.True(conf.plugins["foobaz"])
   end)
   it("loads custom plugins surrounded by spaces", function()
     local conf = assert(conf_loader(nil, {
