@@ -8,7 +8,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - name: Schema change label found
-      uses: Kong/action-slack-notify@bd750854aaf93c5c6f69799bf813c40e7786368a # v2_node20
+      uses: Kong/action-slack-notify@4e5fb42d249be6a45a298f3c9543b111b02f7907 # v2_node20
       continue-on-error: true
       env:
         SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK_SCHEMA_CHANGE }}
