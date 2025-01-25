@@ -625,7 +625,7 @@ jobs:
           suffix=-${{ matrix.label }}
 
     - name: Install regctl
-      uses: regclient/actions/regctl-installer@b6614f5f56245066b533343a85f4109bdc38c8cc
+      uses: regclient/actions/regctl-installer@ce5fd131e371ffcdd7508b478cb223b3511a9183
 
     - name: Push Images
       if: ${{ env.HAS_ACCESS_TO_GITHUB_TOKEN == 'true' }}
